@@ -38,9 +38,9 @@ void update(int startVertex, int numVertices, int numEdges, int *csrOffsets, int
 template <typename T>
 __global__ void init_kernel(T *array, T val, int arraySize);
 __global__ void sssp_kernel(int *csrOffsets_g, int *csrCords_g, int *csrWeights_g, int *distances_g, int numVertices, bool *modified_g, bool *modified_next_g, bool *finished_g);
-__global__ void fetch_and_update(int *csrOffsetsR_g, int *csrCordsR_g, int *csrWeightsR_g, int *distances_g, int *distances_next_g, int numVertices, bool *modified_g, bool *modified_next_g, bool *finished_g);
-__global__ void set_array_vals(int *csrOffsets_g, int *csrCords_g, int numVertices, bool *modified_g, bool *modified_next_g, int *distances_next_g);
-__global__ void copy_D2D(int *distances_g, int *distances_next_g, int numVertices);
+__global__ void fetch_and_update(int *csrOffsetsR_g, int *csrCordsR_g, int *csrWeightsR_g, int *distances_g, int numVertices, bool *modified_g, bool *modified_next_g, bool *finished_g);
+__global__ void set_modified(int *csrOffsets_g, int *csrCords_g, int *csrWeights_g, int numVertices, bool *modified_g, bool *modified_next_g);
+
 
 // main function
 int main(int argc, char **argv) {
@@ -528,7 +528,7 @@ void update(int startVertex, int numVertices, int numEdges,
     // pointers for arrays on GPU
     int *csrOffsets_g, *csrCords_g, *csrWeights_g;
     int *csrOffsetsR_g, *csrCordsR_g, *csrWeightsR_g;
-    int *distances_g, *distances_next_g;
+    int *distances_g;
     bool *modified_g, *modified_next_g, *finished_g;
 
     // allocate memory on GPU
@@ -539,7 +539,6 @@ void update(int startVertex, int numVertices, int numEdges,
     cudaMalloc(&csrCordsR_g, sizeof(int)*(numEdges));
     cudaMalloc(&csrWeightsR_g, sizeof(int)*(numEdges));
     cudaMalloc(&distances_g, sizeof(int)*numVertices);
-    cudaMalloc(&distances_next_g, sizeof(int)*numVertices);
     cudaMalloc(&modified_g, sizeof(bool)*numVertices);
     cudaMalloc(&modified_next_g, sizeof(bool)*numVertices);
     cudaMalloc(&finished_g, sizeof(bool));
@@ -564,8 +563,6 @@ void update(int startVertex, int numVertices, int numEdges,
     cudaMemcpy(csrCordsR_g, csrCordsR, sizeof(int)*(numEdges), cudaMemcpyHostToDevice);
     cudaMemcpy(csrWeightsR_g, csrWeightsR, sizeof(int)*(numEdges), cudaMemcpyHostToDevice);
     cudaMemcpy(distances_g, distances, sizeof(int)*(numVertices), cudaMemcpyHostToDevice);
-    distances[startVertex] = MAX_INT;
-    cudaMemcpy(distances_next_g, distances, sizeof(int)*(numVertices), cudaMemcpyHostToDevice);
     cudaMemcpy(modified_g, modified, sizeof(bool)*(numVertices), cudaMemcpyHostToDevice);
     cudaMemcpy(finished_g, finished, sizeof(bool), cudaMemcpyHostToDevice);
 
@@ -575,9 +572,9 @@ void update(int startVertex, int numVertices, int numEdges,
     while(*finished != true) {
         *finished = true;
         init_kernel<bool><<<1, 1>>>(finished_g, true, 1);
-        fetch_and_update<<<numBlocksV, numThreads>>>(csrOffsetsR_g, csrCordsR_g, csrWeightsR_g, distances_g, distances_next_g, numVertices, modified_g, modified_next_g, finished_g);
-        copy_D2D<<<numBlocksV, numThreads>>>(distances_g, distances_next_g, numVertices);
-        set_array_vals<<<numBlocksV, numThreads>>>(csrOffsets_g, csrCords_g, numVertices, modified_g, modified_next_g, distances_next_g);
+        fetch_and_update<<<numBlocksV, numThreads>>>(csrOffsetsR_g, csrCordsR_g, csrWeightsR_g, distances_g, numVertices, modified_g, modified_next_g, finished_g);
+        init_kernel<bool><<<numBlocksV, numThreads>>>(modified_g, false, numVertices);
+        set_modified<<<numBlocksV, numThreads>>>(csrOffsets_g, csrCords_g, csrWeights_g, numVertices, modified_g, modified_next_g);
         cudaMemcpy(finished, finished_g, sizeof(bool), cudaMemcpyDeviceToHost);
 
         // // check for error
@@ -653,41 +650,35 @@ __global__ void init_kernel(T *array, T val, int arraySize) {
 
 // kernel for updating the distance of modified nodes
 __global__ void fetch_and_update(int *csrOffsetsR_g, int *csrCordsR_g, int *csrWeightsR_g, 
-                                 int *distances_g, int *distances_next_g, int numVertices, 
-                                 bool *modified_g, bool *modified_next_g, bool *finished_g) {
+                                 int *distances_g, int numVertices, bool *modified_g, 
+                                 bool *modified_next_g, bool *finished_g) {
     unsigned int id = blockDim.x*blockIdx.x + threadIdx.x;
     if(id<numVertices && modified_g[id]) {
+        int dist = MAX_INT;
         for(int e=csrOffsetsR_g[id]; e<csrOffsetsR_g[id+1]; e++) {
             int u = csrCordsR_g[e];
-            if(distances_next_g[u] != MAX_INT && csrWeightsR_g[e] != MAX_INT) 
-                atomicMin(&distances_next_g[id], distances_next_g[u]+csrWeightsR_g[e]);
+            if(distances_g[u] != MAX_INT && csrWeightsR_g[e] != MAX_INT) {
+                if(dist > distances_g[u]+csrWeightsR_g[e])
+                    dist = distances_g[u]+csrWeightsR_g[e];
+            }
         }
-        if(distances_g[id] != distances_next_g[id]) {
+        if(dist != distances_g[id]) {
+            distances_g[id] = dist;
             modified_next_g[id] = true;
             *finished_g = false;
         }
-        modified_g[id] = false;
     }
 }
 
 // kernel for setting modified flags
-__global__ void set_array_vals(int *csrOffsets_g, int *csrCords_g, int numVertices, bool *modified_g, 
-                               bool *modified_next_g, int *distances_next_g) {
+__global__ void set_modified(int *csrOffsets_g, int *csrCords_g, int *csrWeights_g, 
+                             int numVertices, bool *modified_g, bool *modified_next_g) {
     unsigned int id = blockDim.x*blockIdx.x + threadIdx.x;
     if(id<numVertices && modified_next_g[id]) {
-        modified_next_g[id] = false;
         for(int e=csrOffsets_g[id]; e<csrOffsets_g[id+1]; e++) {
             int v = csrCords_g[e];
-            modified_g[v] = true;
-            distances_next_g[v] = MAX_INT;
+            if(csrWeights_g[e] != MAX_INT) modified_g[v] = true;
         }
-    }
-}
-
-// kernel for copying arrays values from device to device
-__global__ void copy_D2D(int *distances_g, int *distances_next_g, int numVertices) {
-    unsigned int id = blockDim.x*blockIdx.x + threadIdx.x;
-    if(id<numVertices) {
-        distances_g[id] = distances_next_g[id];
+        modified_next_g[id] = false;
     }
 }
