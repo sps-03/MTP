@@ -2,6 +2,7 @@
 #include <map>
 #include <set>
 #include <algorithm>
+#include <chrono>
 #include <utility>
 #include <stdio.h>
 #include <cuda.h>
@@ -92,9 +93,9 @@ int main(int argc, char **argv) {
     // read from the input file and populate the COO
     for(int i=0; i<numEdges; i++) {
         int src, dest, weight;
-        fscanf(inputFilePtr, "%d %d %d", &src, &dest, &weight);
-        // fscanf(inputFilePtr, "%d %d", &src, &dest);  ///// soc-liveJournel
-        // weight = 1;                                  ///// soc-liveJournel
+        // fscanf(inputFilePtr, "%d %d %d", &src, &dest, &weight);
+        fscanf(inputFilePtr, "%d %d", &src, &dest);
+        weight = 1;
 
         COO[i].src = src;
         COO[i].dest = dest;
@@ -184,36 +185,43 @@ int main(int argc, char **argv) {
     }
 
     // print success message
-    printf("Computed SSSP for initial graph successfully.\n");
+    printf("Computed SSSP for initial graph successfully.\n\n");
 
     // open output file
     FILE *outputFilePtr = fopen(outputFile, "w");
 
-    // write the result to output file
-    fprintf(outputFilePtr, "Distances for the initial graph:\n");
-    for(int i=0; i<numVertices; i++) {
-        if(distances1[i]==MAX_INT)
-            fprintf(outputFilePtr, "The distance to vertex %d is INF\n", i);
-        else
-            fprintf(outputFilePtr, "The distance to vertex %d is %d\n", i, distances1[i]);
-    }
-    fprintf(outputFilePtr, "\n");
-
+    // // write the result to output file
+    // fprintf(outputFilePtr, "Distances for the initial graph:\n");
+    // for(int i=0; i<numVertices; i++) {
+    //     if(distances1[i]==MAX_INT)
+    //         fprintf(outputFilePtr, "The distance to vertex %d is INF\n", i);
+    //     else
+    //         fprintf(outputFilePtr, "The distance to vertex %d is %d\n", i, distances1[i]);
+    // }
+    // fprintf(outputFilePtr, "\n");
     
+    // for measuring time for each update
+    std::chrono::time_point<std::chrono::high_resolution_clock> start, end;
+
     // start updates:
-    int numUpdates, u, v, w;;
+    int numUpdates, batchSize, u, v, w;
     char type;
-    fscanf(updateFilePtr, "%d", &numUpdates);
-    for(int i=0; i < numUpdates; i++) {
-        fprintf(outputFilePtr, "\nUpdate %d : ", i+1);
-        printf("\nUpdate %d: ", i+1);
+    double percentMark = 0.01, totalTime = 0.0;
+    // fscanf(updateFilePtr, "%d", &numUpdates);
+    numUpdates = 0.25*numEdges;
+    batchSize = 1;
+    for(int i=0; i < numUpdates; i+=batchSize) {
+        start = std::chrono::high_resolution_clock::now();
+        // fprintf(outputFilePtr, "\nUpdate %d : ", i+1);
+        // printf("%d: ", i+1);
         fscanf(updateFilePtr, " %c", &type);
         if(type=='a') {
             fscanf(updateFilePtr, "%d", &u);
             fscanf(updateFilePtr, "%d", &v);
-            fscanf(updateFilePtr, "%d", &w);
-            fprintf(outputFilePtr, "%c %d %d %d\n", type, u, v, w);
-            printf("%c %d %d %d\n", type, u, v, w);
+            // fscanf(updateFilePtr, "%d", &w);
+            w = 1;
+            // fprintf(outputFilePtr, "%c %d %d %d\n", type, u, v, w);
+            // printf("%c %d %d %d\n", type, u, v, w);
 
             addEdge(u, v, w, numVertices, numEdges, distances1, parent, 
                     csrOffsets, csrCords, csrWeights, csrOffsetsR, csrCordsR, csrWeightsR, 
@@ -221,22 +229,30 @@ int main(int argc, char **argv) {
         } else if(type=='d') {
             fscanf(updateFilePtr, "%d", &u);
             fscanf(updateFilePtr, "%d", &v);
-            fprintf(outputFilePtr, "%c %d %d\n", type, u, v);
-            printf("%c %d %d\n", type, u, v);
+            // fprintf(outputFilePtr, "%c %d %d\n", type, u, v);
+            // printf("%c %d %d\n", type, u, v);
 
             deleteEdge(u, v, numVertices, numEdges, distances1, parent, 
                        csrOffsets, csrCords, csrWeights, csrOffsetsR, csrCordsR, csrWeightsR, 
                        adjList, edgeWeights);
         }
-
-        // write the result to output file
-        for(int i=0; i<numVertices; i++) {
-            if(distances1[i]==MAX_INT)
-                fprintf(outputFilePtr, "The distance to vertex %d is INF\n", i);
-            else
-                fprintf(outputFilePtr, "The distance to vertex %d is %d\n", i, distances1[i]);
+        end = std::chrono::high_resolution_clock::now();
+        std::chrono::duration<double, std::milli> timeTaken = end-start;
+        totalTime += timeTaken.count();
+        if(i+batchSize >= percentMark*numEdges) {
+            fprintf(outputFilePtr, "%f\n", totalTime);
+            percentMark += 0.01;
+            if(percentMark > 0.201) break;
         }
-        fprintf(outputFilePtr, "\n");
+
+        // // write the result to output file
+        // for(int i=0; i<numVertices; i++) {
+        //     if(distances1[i]==MAX_INT)
+        //         fprintf(outputFilePtr, "The distance to vertex %d is INF\n", i);
+        //     else
+        //         fprintf(outputFilePtr, "The distance to vertex %d is %d\n", i, distances1[i]);
+        // }
+        // fprintf(outputFilePtr, "\n");
     }
     
     // final checking
@@ -246,7 +262,7 @@ int main(int argc, char **argv) {
 
     // check for total path sum
     if(gpuTotalPathSum != cpuTotalPathSum) {
-        printf("\nFinal: Difference in CPU & GPU paths.!!!\n");
+        printf("\nFinal: Difference in CPU & GPU paths.!!!\n%d %d\n", cpuTotalPathSum, gpuTotalPathSum);
         return 0;
     }
 
@@ -259,15 +275,15 @@ int main(int argc, char **argv) {
     // print success message
     printf("\nComputed SSSP for final graph successfully.\n");
 
-    // write the final result to output file
-    fprintf(outputFilePtr, "Distances for final graph\n");
-    for(int i=0; i<numVertices; i++) {
-        if(distances1[i]==MAX_INT)
-            fprintf(outputFilePtr, "The distance to vertex %d is INF\n", i);
-        else
-            fprintf(outputFilePtr, "The distance to vertex %d is %d\n", i, distances1[i]);
-    }
-    fprintf(outputFilePtr, "\n");
+    // // write the final result to output file
+    // fprintf(outputFilePtr, "Distances for final graph\n");
+    // for(int i=0; i<numVertices; i++) {
+    //     if(distances1[i]==MAX_INT)
+    //         fprintf(outputFilePtr, "The distance to vertex %d is INF\n", i);
+    //     else
+    //         fprintf(outputFilePtr, "The distance to vertex %d is %d\n", i, distances1[i]);
+    // }
+    // fprintf(outputFilePtr, "\n");
 
     // free memory allocated on CPU
     free(csrOffsets);
@@ -430,7 +446,7 @@ long long SSSP_GPU(int numVertices, int numEdges, int *csrOffsets, int *csrCords
     cudaEventRecord(stop, 0);
     cudaEventSynchronize(stop);
     cudaEventElapsedTime(&milliseconds, start, stop);
-    printf("SSSP using GPU - Time Taken: %.6f ms \nIterations: %d\n", milliseconds, iter);
+    printf("Static Graph: SSSP using GPU \nTime Taken: %.6f ms \nIterations: %d\n", milliseconds, iter);
 
     // free up the memory
     free(modified);
@@ -466,11 +482,11 @@ void addEdge(int u, int v, int w, int &numVertices, int &numEdges, int *distance
     }
 
     // edge is getting added
-    if(csrWeights[idx1] == MAX_INT) {
+    if(idx1 < csrOffsets[u+1] && csrCords[idx1] == v && csrWeights[idx1] == MAX_INT) {
         csrWeights[idx1] = w;
         csrWeightsR[idx2] = w;
         edgeWeights[{u, v}] = w;
-    } else {    
+    } else {
         numEdges++;
         for(int i=u+1; i<=numVertices; i++) csrOffsets[i]++;
         for(int i=v+1; i<=numVertices; i++) csrOffsetsR[i]++;
@@ -491,7 +507,7 @@ void addEdge(int u, int v, int w, int &numVertices, int &numEdges, int *distance
         csrCordsR[idx2] = u;
         csrWeightsR[idx2] = w;
         adjList[u].push_back(v);
-        edgeWeights[{u,v}] = w;
+        edgeWeights[{u,v}] = w; 
     }
 
     // no need to update the distances if the path is not becoming shorter
@@ -574,7 +590,7 @@ void addEdge(int u, int v, int w, int &numVertices, int &numEdges, int *distance
 
         if(++iter >= numVertices-1) break;
     }
-    
+
     // copy distances back to CPU
     cudaMemcpy(distances, distances_d, sizeof(int)*(numVertices), cudaMemcpyDeviceToHost);
 
@@ -585,7 +601,7 @@ void addEdge(int u, int v, int w, int &numVertices, int &numEdges, int *distance
     cudaEventRecord(stop, 0);
     cudaEventSynchronize(stop);
     cudaEventElapsedTime(&milliseconds, start, stop);
-    printf("SSSP using GPU - Time Taken: %.6f ms \nIterations: %d\n", milliseconds, iter);
+    printf("Time Taken: %.6f ms \nIterations: %d\n", milliseconds, iter);
 
     // free up the memory
     free(modified);
@@ -706,8 +722,8 @@ void deleteEdge(int u, int v, int &numVertices, int &numEdges, int *distances, i
         if(++iter2 >= numVertices-1) break;
     }
 
-    // set parent as -1 for unreachable nodes
-    set_unreachable<<<numBlocksV, numThreads>>>(distances_d, parent_d, numVertices);
+    // // set parent as -1 for unreachable nodes
+    // set_unreachable<<<numBlocksV, numThreads>>>(distances_d, parent_d, numVertices);
     
     // copy distances back to CPU
     cudaMemcpy(distances, distances_d, sizeof(int)*(numVertices), cudaMemcpyDeviceToHost);
@@ -751,22 +767,35 @@ __global__ void sssp_kernel(int *csrOffsets_d, int *csrCords_d, int *csrWeights_
                             int *parent_d, int *locks_d, int numVertices, bool *modified_d, 
                             bool *modified_next_d, bool *finished_d) {
     unsigned int id = blockDim.x*blockIdx.x + threadIdx.x;
-    if(id<numVertices && modified_d[id]) {
+    if(id<numVertices && modified_d[id] && distances_d[id]!=MAX_INT) {
         int distToCurNode = distances_d[id];
         int v, newDist, lock;
-        for(int e=csrOffsets_d[id]; e<csrOffsets_d[id+1] && csrWeights_d[e]!=MAX_INT; e++) {
-            v = csrCords_d[e];
-            newDist = distToCurNode + csrWeights_d[e];
-            do {
-                lock = atomicCAS(&locks_d[v], 0, 1);
-                if(lock==0 && newDist < distances_d[v]) {
-                    distances_d[v] = newDist;
-                    parent_d[v] = id;
-                    modified_next_d[v] = true;
-                    *finished_d = false;
-                }
-            } while(lock != 0);
-            atomicExch(&locks_d[v], 0);
+        for(int e=csrOffsets_d[id]; e<csrOffsets_d[id+1]; e++) {
+            if(csrWeights_d[e] != MAX_INT) {
+                bool gotLock = false;
+                v = csrCords_d[e];
+                newDist = distToCurNode + csrWeights_d[e];
+                do {
+                    if(gotLock==false) lock = atomicCAS(&locks_d[v], 0, 1);
+                    if(lock==0 && newDist < distances_d[v]) {
+                        distances_d[v] = newDist;
+                        parent_d[v] = id;
+                        modified_next_d[v] = true;
+                        *finished_d = false;
+                    }
+                    if(lock==0) {
+                        gotLock = true;
+                        lock = 1;
+                        atomicExch(&locks_d[v], 0);
+                    }
+                } while(gotLock == false);
+            
+                // if(newDist < distances_d[v]) {
+                //     atomicMin(&distances_d[v] , newDist);
+                //     modified_next_d[v] = true;
+                //     *finished_d = false;
+                // }
+            }
         }
     }
 }
