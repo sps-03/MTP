@@ -13,8 +13,8 @@ cp -R $PBS_O_WORKDIR/* .
 module load cuda10.1
 module load gcc640
 nvcc main.cu -o sssp
-./sssp ../input_socLiveJournal.txt ../update_socLiveJournal.txt outputs/output_socLiveJournal.txt > outputs/print.txt
+./sssp ../liveJournal.txt ../update_liveJournal.txt outputs/output_liveJournal.txt > outputs/print_liveJournal.txt
 
-cp outputs/output_socLiveJournal.txt $PBS_O_WORKDIR/outputs/
-cp outputs/print.txt $PBS_O_WORKDIR/outputs/
+cp outputs/output_liveJournal.txt $PBS_O_WORKDIR/outputs/
+cp outputs/print_liveJournal.txt $PBS_O_WORKDIR/outputs/
 rm -rf $tempdir

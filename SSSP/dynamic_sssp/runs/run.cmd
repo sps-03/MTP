@@ -13,8 +13,8 @@ cp -R $PBS_O_WORKDIR/* .
 module load cuda10.1
 module load gcc640
 nvcc main.cu -o sssp
-./sssp inputs/slashdot0811.txt inputs/slashdot0811_updates.txt outputs/output_slashdot0811.txt > outputs/print.txt
+./sssp inputs/slashdot0811.txt inputs/update_slashdot0811.txt outputs/output_slashdot0811.txt > outputs/print_slashdot0811.txt
 
 cp outputs/output_slashdot0811.txt $PBS_O_WORKDIR/outputs/
-cp outputs/print.txt $PBS_O_WORKDIR/outputs/
+cp outputs/print_slashdot0811.txt $PBS_O_WORKDIR/outputs/
 rm -rf $tempdir
