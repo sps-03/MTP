@@ -1,6 +1,0 @@
-The distance to vertex 0 is 0
-The distance to vertex 1 is 4
-The distance to vertex 2 is 12
-The distance to vertex 3 is 14
-The distance to vertex 4 is 13
-The distance to vertex 5 is INF

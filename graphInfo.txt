@@ -1,0 +1,190 @@
+Friendster ????
+----------
+Nodes 	                            65,608,366
+Edges 	                            1,806,067,135
+Nodes in largest WCC 	            65608366 (1.000)
+Edges in largest WCC 	            1806067135 (1.000)
+Nodes in largest SCC 	            65608366 (1.000)
+Edges in largest SCC 	            1806067135 (1.000)
+Average clustering coefficient 	    0.1623
+Number of triangles 	            4173724142
+Fraction of closed triangles 	    0.005859
+Diameter (longest shortest path) 	32
+90-percentile effective diameter 	5.8
+
+
+
+Twitter-2010 (D-UW)
+-------------------
+Nodes	                21,297,772
+Edges	                265,025,809
+bits/link	            13.897 (64.29%)
+bits/link (transpose)	13.148 (60.83%)
+average degree	        35.253
+maximum indegree	    770155
+maximum outdegree	    2997469
+dangling nodes	        3.72%
+buckets	                0.09%
+largest component	    33479734 (80.38%)
+average distance	    4.46 (± 0.002)
+reachable pairs	        81.08% (± 0.257)
+median distance	        5 (73.16%)
+harmonic diameter	    5.29 (± 0.016)
+
+MINV=0 MAXV=21297771
+SELF LOOP & NO MULTI-EDGE
+UPDATES: Additions=39749445, Deletions=39758297
+
+
+
+SinaWeibo (D-UW)
+----------------
+Nodes	                58,655,849
+Edges	                261,321,071
+
+MINV=0 MAXV=58655848
+SELF LOOP & NO MULTI-EDGE
+UPDATES: Additions=39194301, Deletions=39202020
+
+
+
+Orkut (UD-UW)
+-------------
+Nodes                               3,072,441
+Edges                               117,185,083
+UDEdges                             234,370,166
+Nodes in largest WCC            	3072441 (1.000)
+Edges in largest WCC            	117185083 (1.000)
+Nodes in largest SCC            	3072441 (1.000)
+Edges in largest SCC            	117185083 (1.000)
+Average clustering coefficient  	0.1666
+Number of triangles                 627584181
+Fraction of closed triangles 	    0.01414
+Diameter (longest shortest path) 	9
+90-percentile effective diameter 	4.8
+
+MINV=0 MAXV=3072625
+NO SELF LOOP & NO MULTI-EDGE
+UPDATES: Additions=35152752, Deletions=35158297
+
+
+
+WikiPedia (D-UW)
+----------------
+Nodes		                    3,370,462
+Edges		                    93,373,056
+Triangle count		            1,977,659,897
+Maximum degree		            283,929
+Maximum outdegree		        5,333
+Maximum indegree		        281,486
+Diameter		                10
+
+MINV=0 MAXV=3370461
+SELF LOOP & NO MULTI-EDGE
+UPDATES: Additions=14006902, Deletions=14005014
+
+
+
+LiveJournal (D-UW)
+------------------
+Nodes 	                            4,847,571
+Edges                               68,993,773
+Nodes in largest WCC            	4843953 (0.999)
+Edges in largest WCC            	68983820 (1.000)
+Nodes in largest SCC             	3828682 (0.790)
+Edges in largest SCC            	65825429 (0.954)
+Average clustering coefficient   	0.2742
+Number of triangles 	            285730264
+Fraction of closed triangles 	    0.04266
+Diameter (longest shortest path) 	16
+90-percentile effective diameter 	6.5
+
+MINV=0 MAXV=4847570
+SELF LOOP & NO MULTI-EDGE
+UPDATES: Additions=10348951, Deletions=10349180
+
+
+
+Pokec (D-UW)
+------------
+Nodes 	                            1,632,803
+Edges 	                            30,622,564
+Nodes in largest WCC 	            1632803 (1.000)
+Edges in largest WCC 	            30622564 (1.000)
+Nodes in largest SCC 	            1304537 (0.799)
+Edges in largest SCC 	            29183655 (0.953)
+Average clustering coefficient 	    0.1094
+Number of triangles 	            32557458
+Fraction of closed triangles 	    0.01611
+Diameter (longest shortest path) 	11
+90-percentile effective diameter 	5.2
+
+MINV=0 MAXV=1632802
+NO SELF LOOP & NO MULTI-EDGE
+UPDATES: Additions=4596237, Deletions=4590532
+
+
+
+USA-RoadNet (UD-UW)
+-------------------
+Nodes               23,947,347
+Edges               28,854,312
+UDEdges             57,708,624
+
+MINV=0 MAXV=23947346
+NO SELF LOOP & NO MULTI-EDGE
+UPDATES: Additions=8656507, Deletions=8656080
+
+
+
+Germany-OSM (UD-UW)
+-------------------
+Nodes               11,548,845
+Edges               12,369,181
+UDEdges             24,738,362
+
+MINV=0 MAXV=11548844
+NO SELF LOOP & NO MULTI-EDGE
+UPDATES: Additions=3713252, Deletions=3708256
+
+
+
+RMAT (D-UW)
+-----------
+Nodes               16,777,216
+Edges               87,654,320
+
+MINV=0 MAXV=16775680
+NO SELF LOOP & NO MULTI-EDGE
+UPDATES: Additions=13148962, Deletions=13147334
+
+
+
+UniformRandom (D-UW)
+--------------------
+Nodes               10,000,000
+Edges               80,000,000
+
+MINV=0 MAXV=9999999
+SELF LOOP & MULTI-EDGE
+UPDATES: Additions=12000473, Deletions=11999527
+
+
+
+Slashdot0811 (D-UW)
+-------------------
+Nodes 	                            77360
+Edges 	                            905468
+Nodes in largest WCC 	            77360 (1.000)
+Edges in largest WCC 	            905468 (1.000)
+Nodes in largest SCC 	            70355 (0.909)
+Edges in largest SCC 	            888662 (0.981)
+Average clustering coefficient 	    0.0555
+Number of triangles 	            551724
+Fraction of closed triangles 	    0.008184
+Diameter (longest shortest path) 	10
+90-percentile effective diameter 	4.7
+
+MINV=0 MAXV=77359
+SELF LOOP & NO MULTI-EDGE
+UPDATES: Additions=135904, Deletions=135736
