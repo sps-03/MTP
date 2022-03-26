@@ -6,9 +6,9 @@
 
 JOB_ID=`echo $PBS_JOBID | cut -f 1 -d .`
 TEMP_DIR=$HOME/scratch/job$JOB_ID
-FILE_NAME="slashdot0811.txt"
+FILE_NAME="usaRoadNet.txt"
 UPDATE_PERC=10
-IS_DIRECTED=1
+IS_DIRECTED=0
 
 mkdir -p $TEMP_DIR
 cd $TEMP_DIR

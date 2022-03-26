@@ -58,7 +58,7 @@ __global__ void count_added_triangles(updateInfo *updates_d, int batchSize, unsi
                                       int *diffCsrOffsets_d, int *diffCsrCords_d, bool *modifiedDiffCsr_d);
 
 // main function
-// usage: ./a.out inputFile updateFile [updatePerc] [isDirected]
+// usage: ./a.out inputFile updateFile [percentUpdate] [isDirected]
 int main(int argc, char **argv) {
     // if input or update file names are not provided then exit
     if(argc < 3) {

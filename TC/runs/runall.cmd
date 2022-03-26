@@ -6,8 +6,9 @@
 
 JOB_ID=`echo $PBS_JOBID | cut -f 1 -d .`
 TEMP_DIR=$HOME/scratch/job$JOB_ID
-FILES="../inputGraphs/inputs/*"
-IS_DIRECTED=1
+FILE="../inputGraphs/inputs/usaRoadNet.txt"
+FILE_NAME=$(basename $FILE)
+IS_DIRECTED=0
 
 mkdir -p $TEMP_DIR
 cd $TEMP_DIR
@@ -18,16 +19,12 @@ module load gcc640
 nvcc main.cu -o tc
 
 rm outputs/*
-for FILE in $FILES
-do
-	FILE_NAME=$(basename $FILE)
-	
-	for UPDATE_PERC in {1..20}
-	do
-	./tc ../inputGraphs/inputs/$FILE_NAME ../inputGraphs/updates/update_$FILE_NAME $UPDATE_PERC $IS_DIRECTED >> outputs/print_$FILE_NAME
-	done
 
-	cp outputs/print_$FILE_NAME $PBS_O_WORKDIR/outputs/
+for UPDATE_PERC in {1..20}
+do
+./tc ../inputGraphs/inputs/$FILE_NAME ../inputGraphs/updates/update_$FILE_NAME $UPDATE_PERC $IS_DIRECTED >> outputs/print_$FILE_NAME
 done
+
+cp outputs/print_$FILE_NAME $PBS_O_WORKDIR/outputs/
 
 rm -rf $TEMP_DIR
