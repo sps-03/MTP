@@ -22,19 +22,15 @@ struct updateInfo {
 // HOST FUNCTIONS:
 bool compareTwoEdges(const edgeInfo &a, const edgeInfo &b);
 bool compareTwoEdgesR(const edgeInfo &a, const edgeInfo &b);
-bool checkDistances(int *distances1, int *distances2, int numVertices);
 void printArray(int *arr, int len);
-void writeResults(FILE *outputFilePtr, int *distances, int numVertices);
 void checkCudaError();
-long long dijkstra(int numVertices, const std::vector<std::vector<int>> &adjList, 
-                   const std::map<std::pair<int,int>, int> &edgeWeights, int *distances, int source);
-long long SSSP_GPU(int numVertices, int numEdges, int *csrOffsets, int *csrCords, int *csrWeights, 
-                   int *distances, int *parent, int source);
+unsigned long long SSSP_GPU(int numVertices, int numEdges, int *csrOffsets, int *csrCords, int *csrWeights, 
+                            int *distances, int *parent, int source);
 void processUpdates(int numVertices, int numEdges, int *distances, int *parent, updateInfo *&updates, 
                     int batchSize, int *csrOffsets, int *csrCords, int *csrWeights, 
                     int *csrOffsetsR, int *csrCordsR, int *csrWeightsR, 
-                    int *numEdgesDiffCsr, int *&diffCsrOffsets, int *&diffCsrCords, int *&diffCsrWeights, 
-                    int *numEdgesDiffCsrR, int *&diffCsrOffsetsR, int *&diffCsrCordsR, int *&diffCsrWeightsR);
+                    int &numEdgesDiffCsr, int *&diffCsrOffsets, int *&diffCsrCords, int *&diffCsrWeights, 
+                    int &numEdgesDiffCsrR, int *&diffCsrOffsetsR, int *&diffCsrCordsR, int *&diffCsrWeightsR);
 
 // DEVICE FUNCTIONS:
 template <typename T>
@@ -83,7 +79,7 @@ __global__ void push_and_update(int *csrOffsets_d, int *csrCords_d, int *csrWeig
 
 
 // main function
-// usage: ./a.out inputFile updateFile [updatePerc] [isDirected]
+// usage: ./a.out inputFile updateFile [percentUpdate] [isDirected]
 int main(int argc, char **argv) {
     // if input or update file names are not provided then exit
     if(argc < 3) {
@@ -121,11 +117,6 @@ int main(int argc, char **argv) {
     // to store the input graph in COO format
     std::vector<edgeInfo> COO(numEdges);
 
-    // data structures for storing the graph (as adjacency list) and edge weights
-    // used while computing SSSP on host
-    std::vector<std::vector<int>> adjList(numVertices);
-    std::map<std::pair<int,int>, int> edgeWeights;
-
     // read from the input file and populate the COO
     for(int i=0; i<numEdges; i++) {
         int src, dest, weight;
@@ -135,8 +126,6 @@ int main(int argc, char **argv) {
         COO[i].src = src;
         COO[i].dest = dest;
         COO[i].weight = weight;
-        adjList[src].push_back(dest);
-        edgeWeights[{src,dest}] = weight;
     }
 
     // close input file
@@ -188,44 +177,24 @@ int main(int argc, char **argv) {
 
     // converting the graph to CSRs done
 
+    // get graph type
+    bool isDirected = true;
+    if(argc >= 5 && atoi(argv[4])==0) isDirected = false;
+
     // shortest distances from start vertex
-    // distances1 is computed using GPU and distances2 is computed using CPU
-    int *distances1 = (int*)malloc(sizeof(int)*numVertices);
-    int *distances2 = (int*)malloc(sizeof(int)*numVertices);
+    int *distances_gpu = (int*)malloc(sizeof(int)*numVertices);
 
     // parent array
     int *parent = (int*)malloc(sizeof(int)*numVertices);
 
     // compute the shortest paths
-    long long gpuTotalPathSum = SSSP_GPU(numVertices, numEdges, csrOffsets, csrCords, csrWeights, 
-                                         distances1, parent, startVertex);
-    long long cpuTotalPathSum = dijkstra(numVertices, adjList, edgeWeights, distances2, startVertex);
-
-    // check for path sum
-    if(gpuTotalPathSum != cpuTotalPathSum) {
-        printf("Initial Graph: Difference in CPU & GPU paths.!!!\ngDist=%d cDist=%d\n\n", gpuTotalPathSum, cpuTotalPathSum);
-        return 0;
-    }
-
-    // check whether both the distance arrays are same or not
-    if(checkDistances(distances1, distances2, numVertices) == false) {
-        printf("Initial Graph: Check failed..!!!\n");
-        return 0;
-    }
-
-    printf("Computed SSSP for initial graph successfully.\ngDist=%d cDist=%d\n\n", gpuTotalPathSum, cpuTotalPathSum);
-
-    // open output file
-    FILE *outputFilePtr = fopen(outputFile, "w");
-
-    // // write the result to output file
-    // fprintf(outputFilePtr, "Distances for the initial graph:\n");
-    // writeResults(outputFilePtr, distances1, numVertices);
-    
+    unsigned long long gpuTotalPathSum = SSSP_GPU(numVertices, numEdges, csrOffsets, csrCords, csrWeights, 
+                                         distances_gpu, parent, startVertex);
+    printf("Initial graph: Dist=%llu\n", gpuTotalPathSum);
 
     // will be using Diff-CSR along with CSR for dynamic graph
-    int *numEdgesDiffCsr = (int*)malloc(sizeof(int)); *numEdgesDiffCsr = 0;
-    int *numEdgesDiffCsrR = (int*)malloc(sizeof(int)); *numEdgesDiffCsrR = 0;
+    int numEdgesDiffCsr = 0;
+    int numEdgesDiffCsrR = 0;
     int *diffCsrOffsets, *diffCsrCords, *diffCsrWeights;
     int *diffCsrOffsetsR, *diffCsrCordsR, *diffCsrWeightsR;
     diffCsrOffsets = (int*)malloc(sizeof(int)*(numVertices+1));
@@ -241,14 +210,20 @@ int main(int argc, char **argv) {
     std::chrono::time_point<std::chrono::high_resolution_clock> start, end;
 
     // start updates
-    int numUpdates, batchSize;
-    int u, v, w;
+    int numUpdates, batchSize, percentUpdate;
     char type;
-    double percentMark = 0.01, totalTime = 0.0;
+    int u, v, w;
+    double totalTime = 0.0;
     
-    numUpdates = 0.25*numEdges;
-    batchSize = 100000;
-    updateInfo *updates = (updateInfo*)malloc(sizeof(updateInfo)*batchSize);
+    percentUpdate = 10;
+    numUpdates = percentUpdate * 0.01 * numEdges;
+    if(argc >= 4) {
+        percentUpdate = atoi(argv[3]);
+        numUpdates = percentUpdate * 0.01 * numEdges;
+    }
+    if(!isDirected && numUpdates&1) numUpdates++;
+    batchSize = numUpdates;
+    updateInfo *updates = (updateInfo*) malloc(sizeof(updateInfo) * batchSize);
     for(int i=0; i < numUpdates; i+=batchSize) {
         for(int j=0; j<batchSize; j++) {
             fscanf(updateFilePtr, " %c", &type);
@@ -257,18 +232,12 @@ int main(int argc, char **argv) {
             w = 1;
             
             updates[j] = {type, u, v, w};
-            if(type == 'a') {
-                adjList[u].push_back(v);
-                edgeWeights[{u,v}] = w;
-            } else if(type == 'd') {
-                adjList[u].erase(std::find(adjList[u].begin(), adjList[u].end(), v));
-                edgeWeights.erase({u,v});
-            }
+            if(!isDirected) updates[++j] = {type, v, u, w};
         }
 
         // call the function to process the updates for current batch
         start = std::chrono::high_resolution_clock::now();
-        processUpdates(numVertices, numEdges, distances1, parent, updates, batchSize,
+        processUpdates(numVertices, numEdges, distances_gpu, parent, updates, batchSize,
                        csrOffsets, csrCords, csrWeights, csrOffsetsR, csrCordsR, csrWeightsR, 
                        numEdgesDiffCsr, diffCsrOffsets, diffCsrCords, diffCsrWeights, 
                        numEdgesDiffCsrR, diffCsrOffsetsR, diffCsrCordsR, diffCsrWeightsR);
@@ -277,39 +246,15 @@ int main(int argc, char **argv) {
         // for measuring total time taken for updates
         std::chrono::duration<double, std::milli> timeTaken = end-start;
         totalTime += timeTaken.count();
-        
-        // print the total time taken (till 20%)
-        if(i+batchSize >= percentMark*numEdges) {
-            fprintf(outputFilePtr, "%f\n", totalTime);
-            percentMark += 0.01;
-            if(percentMark > 0.201) break;
-        }
-
-        // // write the result to output file
-        // writeResults(outputFilePtr, distances1, numVertices);
+        printf("Total time taken for %d percent updates: %.3f ms\n", percentUpdate, totalTime);
     }
     
-    // final checking
-    cpuTotalPathSum = dijkstra(numVertices, adjList, edgeWeights, distances2, startVertex);
-    gpuTotalPathSum = 0; for(int i=0; i<numVertices; i++) gpuTotalPathSum += distances1[i];
-
-    // check for total path sum
-    if(gpuTotalPathSum != cpuTotalPathSum) {
-        printf("\nFinal: Difference in CPU & GPU paths.!!!\ngDist=%d cDist=%d\n", gpuTotalPathSum, cpuTotalPathSum);
-        return 0;
+    gpuTotalPathSum = 0;
+    for(int i=0; i<numVertices; i++) {
+        if(distances_gpu[i] != MAX_INT)
+            gpuTotalPathSum += distances_gpu[i];
     }
-
-    // check whether both the distances arrays are same or not
-    if(checkDistances(distances1, distances2, numVertices) == false) {
-        printf("\nFinal: Check failed..!!!\n");
-        return 0;
-    }
-
-    printf("\nComputed SSSP for final graph successfully.\ngDist=%d cDist=%d\n\n", gpuTotalPathSum, cpuTotalPathSum);
-
-    // // write the final result to output file
-    // fprintf(outputFilePtr, "Distances for final graph\n");
-    // writeResults(outputFilePtr, distances1, numVertices);
+    printf("Final graph: Dist=%llu\n\n", gpuTotalPathSum);
 
     // free memory allocated on host
     free(csrOffsets);
@@ -318,22 +263,18 @@ int main(int argc, char **argv) {
     free(csrOffsetsR);
     free(csrCordsR);
     free(csrWeightsR);
-    free(numEdgesDiffCsr);
     free(diffCsrOffsets);
     free(diffCsrCords);
     free(diffCsrWeights);
-    free(numEdgesDiffCsrR);
     free(diffCsrOffsetsR);
     free(diffCsrCordsR);
     free(diffCsrWeightsR);
-    free(distances1);
-    free(distances2);
+    free(distances_gpu);
     free(parent);
     free(updates);
 
     // close files
     fclose(updateFilePtr);
-    fclose(outputFilePtr);
 
     return 0;
 }
@@ -350,30 +291,11 @@ bool compareTwoEdgesR(const edgeInfo &a, const edgeInfo &b) {
     return a.src < b.src;
 }
 
-// host function to check whether two distances arrays are same of not
-bool checkDistances(int *distances1, int *distances2, int numVertices) {
-    for(int i=0; i<numVertices; i++) {
-        if(distances1[i] != distances2[i]) return false;
-    }
-    return true;
-}
-
 // host function to print an array content
 void printArray(int *arr, int len) {
     for(int i=0; i<len; i++) {
         printf("%d ", arr[i]);
     } printf("\n");
-}
-
-// write results to the output file
-void writeResults(FILE *outputFilePtr, int *distances, int numVertices) {
-    for(int i=0; i<numVertices; i++) {
-        if(distances[i]==MAX_INT)
-            fprintf(outputFilePtr, "The distance to vertex %d is INF\n", i);
-        else
-            fprintf(outputFilePtr, "The distance to vertex %d is %d\n", i, distances[i]);
-    }
-    fprintf(outputFilePtr, "\n");
 }
 
 // check for cudaError
@@ -384,37 +306,9 @@ void checkCudaError() {
     }
 }
 
-// host function to compute shortest path using dijkstra's algorithm
-long long dijkstra(int numVertices, const std::vector<std::vector<int>> &adjList, 
-                   const std::map<std::pair<int,int>, int> &edgeWeights, int *distances, int source=0) {
-    for(int i=0; i<numVertices; i++) distances[i] = MAX_INT;
-    distances[source] = 0;
-
-    std::set<std::pair<int,int>> active_vertices;
-    active_vertices.insert({0, source});
-
-    while(!active_vertices.empty()) {
-        int u = active_vertices.begin()->second;
-        active_vertices.erase(active_vertices.begin());
-        for(int v : adjList[u]) {
-            if(edgeWeights.at({u,v}) == MAX_INT) continue;
-            int newDist = distances[u] + edgeWeights.at({u,v});
-            if(newDist < distances[v]) {
-                active_vertices.erase({distances[v], v});
-                distances[v] = newDist;
-                active_vertices.insert({newDist, v});
-            }
-        }
-    }
-
-    long long sum = 0;
-    for(int i=0; i<numVertices; i++) sum += distances[i];
-    return sum;
-}
-
 // host function for parallel bellman ford (fixed point)
-long long SSSP_GPU(int numVertices, int numEdges, int *csrOffsets, int *csrCords, int *csrWeights, 
-                   int *distances, int *parent, int source=0) {
+unsigned long long SSSP_GPU(int numVertices, int numEdges, int *csrOffsets, int *csrCords, int *csrWeights, 
+                            int *distances, int *parent, int source=0) {
     // launch config
     const int numThreads = 1024;
     const int numBlocksV = (numVertices+numThreads-1)/numThreads;
@@ -511,8 +405,11 @@ long long SSSP_GPU(int numVertices, int numEdges, int *csrOffsets, int *csrCords
     cudaFree(modified_next_d);
     cudaFree(finished_d);
 
-    long long sum = 0;
-    for(int i=0; i<numVertices; i++) sum += distances[i];
+    unsigned long long sum = 0;
+    for(int i=0; i<numVertices; i++) {
+        if(distances[i] != MAX_INT)
+            sum += distances[i];
+    }
     return sum;
 }
 
@@ -520,8 +417,8 @@ long long SSSP_GPU(int numVertices, int numEdges, int *csrOffsets, int *csrCords
 void processUpdates(int numVertices, int numEdges, int *distances, int *parent, updateInfo *&updates, 
                     int batchSize, int *csrOffsets, int *csrCords, int *csrWeights, 
                     int *csrOffsetsR, int *csrCordsR, int *csrWeightsR, 
-                    int *numEdgesDiffCsr, int *&diffCsrOffsets, int *&diffCsrCords, int *&diffCsrWeights, 
-                    int *numEdgesDiffCsrR, int *&diffCsrOffsetsR, int *&diffCsrCordsR, int *&diffCsrWeightsR) {
+                    int &numEdgesDiffCsr, int *&diffCsrOffsets, int *&diffCsrCords, int *&diffCsrWeights, 
+                    int &numEdgesDiffCsrR, int *&diffCsrOffsetsR, int *&diffCsrCordsR, int *&diffCsrWeightsR) {
     // launch config
     const int numThreads = 1024;
     const int numBlocksB = (batchSize+numThreads-1)/numThreads;
@@ -551,11 +448,11 @@ void processUpdates(int numVertices, int numEdges, int *distances, int *parent, 
     cudaMalloc(&csrCordsR_d, sizeof(int)*(numEdges));
     cudaMalloc(&csrWeightsR_d, sizeof(int)*(numEdges));
     cudaMalloc(&diffCsrOffsets_d, sizeof(int)*(numVertices+1));
-    cudaMalloc(&diffCsrCords_d, sizeof(int)*(*numEdgesDiffCsr));
-    cudaMalloc(&diffCsrWeights_d, sizeof(int)*(*numEdgesDiffCsr));
+    cudaMalloc(&diffCsrCords_d, sizeof(int)*(numEdgesDiffCsr));
+    cudaMalloc(&diffCsrWeights_d, sizeof(int)*(numEdgesDiffCsr));
     cudaMalloc(&diffCsrOffsetsR_d, sizeof(int)*(numVertices+1));
-    cudaMalloc(&diffCsrCordsR_d, sizeof(int)*(*numEdgesDiffCsrR));
-    cudaMalloc(&diffCsrWeightsR_d, sizeof(int)*(*numEdgesDiffCsrR));
+    cudaMalloc(&diffCsrCordsR_d, sizeof(int)*(numEdgesDiffCsrR));
+    cudaMalloc(&diffCsrWeightsR_d, sizeof(int)*(numEdgesDiffCsrR));
     cudaMalloc(&modifiedD_d, sizeof(bool)*numVertices);
     cudaMalloc(&modifiedA_d, sizeof(bool)*numVertices);
     cudaMalloc(&finished_d, sizeof(bool));
@@ -578,11 +475,11 @@ void processUpdates(int numVertices, int numEdges, int *distances, int *parent, 
     cudaMemcpy(csrCordsR_d, csrCordsR, sizeof(int)*(numEdges), cudaMemcpyHostToDevice);
     cudaMemcpy(csrWeightsR_d, csrWeightsR, sizeof(int)*(numEdges), cudaMemcpyHostToDevice);
     cudaMemcpy(diffCsrOffsets_d, diffCsrOffsets, sizeof(int)*(numVertices+1), cudaMemcpyHostToDevice);
-    cudaMemcpy(diffCsrCords_d, diffCsrCords, sizeof(int)*(*numEdgesDiffCsr), cudaMemcpyHostToDevice);
-    cudaMemcpy(diffCsrWeights_d, diffCsrWeights, sizeof(int)*(*numEdgesDiffCsr), cudaMemcpyHostToDevice);
+    cudaMemcpy(diffCsrCords_d, diffCsrCords, sizeof(int)*(numEdgesDiffCsr), cudaMemcpyHostToDevice);
+    cudaMemcpy(diffCsrWeights_d, diffCsrWeights, sizeof(int)*(numEdgesDiffCsr), cudaMemcpyHostToDevice);
     cudaMemcpy(diffCsrOffsetsR_d, diffCsrOffsetsR, sizeof(int)*(numVertices+1), cudaMemcpyHostToDevice);
-    cudaMemcpy(diffCsrCordsR_d, diffCsrCordsR, sizeof(int)*(*numEdgesDiffCsrR), cudaMemcpyHostToDevice);
-    cudaMemcpy(diffCsrWeightsR_d, diffCsrWeightsR, sizeof(int)*(*numEdgesDiffCsrR), cudaMemcpyHostToDevice);    
+    cudaMemcpy(diffCsrCordsR_d, diffCsrCordsR, sizeof(int)*(numEdgesDiffCsrR), cudaMemcpyHostToDevice);
+    cudaMemcpy(diffCsrWeightsR_d, diffCsrWeightsR, sizeof(int)*(numEdgesDiffCsrR), cudaMemcpyHostToDevice);    
     init_kernel<bool><<<numBlocksV, numThreads>>>(modifiedD_d, false, numVertices);
     init_kernel<bool><<<numBlocksV, numThreads>>>(modifiedA_d, false, numVertices);
 
@@ -656,14 +553,14 @@ void processUpdates(int numVertices, int numEdges, int *distances, int *parent, 
     cudaFree(tempArrR_d);
     
     // populate new diffCSR
-    cudaMemcpy(numEdgesDiffCsr, &diffCsrOffsets_next_d[numVertices], sizeof(int), cudaMemcpyDeviceToHost);
-    cudaMemcpy(numEdgesDiffCsrR, &diffCsrOffsetsR_next_d[numVertices], sizeof(int), cudaMemcpyDeviceToHost);
-    cudaMalloc(&diffCsrCords_next_d, sizeof(int)*(*numEdgesDiffCsr));
-    cudaMalloc(&diffCsrWeights_next_d, sizeof(int)*(*numEdgesDiffCsr));
-    cudaMalloc(&diffCsrCordsR_next_d, sizeof(int)*(*numEdgesDiffCsrR));
-    cudaMalloc(&diffCsrWeightsR_next_d, sizeof(int)*(*numEdgesDiffCsrR));
-    init_kernel<int><<<((*numEdgesDiffCsr)+numThreads)/numThreads, numThreads>>>(diffCsrWeights_next_d, MAX_INT, *numEdgesDiffCsr);
-    init_kernel<int><<<((*numEdgesDiffCsrR)+numThreads)/numThreads, numThreads>>>(diffCsrWeightsR_next_d, MAX_INT, *numEdgesDiffCsrR);
+    cudaMemcpy(&numEdgesDiffCsr, &diffCsrOffsets_next_d[numVertices], sizeof(int), cudaMemcpyDeviceToHost);
+    cudaMemcpy(&numEdgesDiffCsrR, &diffCsrOffsetsR_next_d[numVertices], sizeof(int), cudaMemcpyDeviceToHost);
+    cudaMalloc(&diffCsrCords_next_d, sizeof(int)*(numEdgesDiffCsr));
+    cudaMalloc(&diffCsrWeights_next_d, sizeof(int)*(numEdgesDiffCsr));
+    cudaMalloc(&diffCsrCordsR_next_d, sizeof(int)*(numEdgesDiffCsrR));
+    cudaMalloc(&diffCsrWeightsR_next_d, sizeof(int)*(numEdgesDiffCsrR));
+    init_kernel<int><<<((numEdgesDiffCsr)+numThreads)/numThreads, numThreads>>>(diffCsrWeights_next_d, MAX_INT, numEdgesDiffCsr);
+    init_kernel<int><<<((numEdgesDiffCsrR)+numThreads)/numThreads, numThreads>>>(diffCsrWeightsR_next_d, MAX_INT, numEdgesDiffCsrR);
     
     // copy edges from previous diffCSR to new diffCSr
     copy_edges_diffcsr<<<numBlocksV, numThreads>>>(numVertices, diffCsrOffsets_d, diffCsrCords_d, diffCsrWeights_d, 
@@ -707,15 +604,15 @@ void processUpdates(int numVertices, int numEdges, int *distances, int *parent, 
     cudaMemcpy(csrCordsR, csrCordsR_d, sizeof(int)*(numEdges), cudaMemcpyDeviceToHost);
     cudaMemcpy(csrWeightsR, csrWeightsR_d, sizeof(int)*(numEdges), cudaMemcpyDeviceToHost);
     cudaMemcpy(diffCsrOffsets, diffCsrOffsets_d, sizeof(int)*(numVertices+1), cudaMemcpyDeviceToHost);
-    diffCsrCords = (int*)realloc(diffCsrCords, sizeof(int)*(*numEdgesDiffCsr));
-    diffCsrWeights = (int*)realloc(diffCsrWeights, sizeof(int)*(*numEdgesDiffCsr));
-    cudaMemcpy(diffCsrCords, diffCsrCords_d, sizeof(int)*(*numEdgesDiffCsr), cudaMemcpyDeviceToHost);
-    cudaMemcpy(diffCsrWeights, diffCsrWeights_d, sizeof(int)*(*numEdgesDiffCsr), cudaMemcpyDeviceToHost);
+    diffCsrCords = (int*)realloc(diffCsrCords, sizeof(int)*(numEdgesDiffCsr));
+    diffCsrWeights = (int*)realloc(diffCsrWeights, sizeof(int)*(numEdgesDiffCsr));
+    cudaMemcpy(diffCsrCords, diffCsrCords_d, sizeof(int)*(numEdgesDiffCsr), cudaMemcpyDeviceToHost);
+    cudaMemcpy(diffCsrWeights, diffCsrWeights_d, sizeof(int)*(numEdgesDiffCsr), cudaMemcpyDeviceToHost);
     cudaMemcpy(diffCsrOffsetsR, diffCsrOffsetsR_d, sizeof(int)*(numVertices+1), cudaMemcpyDeviceToHost);
-    diffCsrCordsR = (int*)realloc(diffCsrCordsR, sizeof(int)*(*numEdgesDiffCsrR));
-    diffCsrWeightsR = (int*)realloc(diffCsrWeightsR, sizeof(int)*(*numEdgesDiffCsrR));
-    cudaMemcpy(diffCsrCordsR, diffCsrCordsR_d, sizeof(int)*(*numEdgesDiffCsrR), cudaMemcpyDeviceToHost);
-    cudaMemcpy(diffCsrWeightsR, diffCsrWeightsR_d, sizeof(int)*(*numEdgesDiffCsrR), cudaMemcpyDeviceToHost);
+    diffCsrCordsR = (int*)realloc(diffCsrCordsR, sizeof(int)*(numEdgesDiffCsrR));
+    diffCsrWeightsR = (int*)realloc(diffCsrWeightsR, sizeof(int)*(numEdgesDiffCsrR));
+    cudaMemcpy(diffCsrCordsR, diffCsrCordsR_d, sizeof(int)*(numEdgesDiffCsrR), cudaMemcpyDeviceToHost);
+    cudaMemcpy(diffCsrWeightsR, diffCsrWeightsR_d, sizeof(int)*(numEdgesDiffCsrR), cudaMemcpyDeviceToHost);
     cudaDeviceSynchronize();
     checkCudaError();
     
